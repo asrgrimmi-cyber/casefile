@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System deps (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg tesseract-ocr
+
+      - name: System deps (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg tesseract -y --no-progress
+          # choco's tesseract lands in Program Files\Tesseract-OCR, which casefile auto-detects
+          "C:\Program Files\Tesseract-OCR" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Tests (fast)
+        # TTS / full-render tests are marked slow: they need the Kokoro models (~340 MB, `casefile doctor`)
+        run: uv run pytest -q -m "not slow"

@@ -1,0 +1,48 @@
+[project]
+name = "casefile-mcp"
+version = "0.1.0"
+description = "Turn a screen recording of a test session into a narrated, captioned walkthrough video, driven by any AI assistant over MCP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["mcp", "screen-recording", "documentation", "testing", "walkthrough", "tts", "ocr"]
+dependencies = [
+    "pillow>=10",
+    "numpy>=1.26",
+    "pytesseract>=0.3.10",
+    "kokoro-onnx>=0.4",
+    "soundfile>=0.12",
+    "pydantic>=2.6",
+    "typer>=0.12",
+    "mcp>=1.2",
+    "fonttools>=4.40",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+casefile = "casefile.cli:app"
+casefile-mcp = "casefile.mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["casefile"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"assets" = "casefile/_assets"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501", "E731", "E741"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: renders video or runs TTS"]

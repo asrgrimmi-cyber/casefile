@@ -1,0 +1,39 @@
+{
+  "source": "tests/fixtures/out/fixture.mp4",
+  "output": {"path": "out/fixture_edit.mp4", "size": [1920, 1080], "fps": 30},
+  "voice": {"engine": "kokoro", "voice": "af_heart", "speed": 1.0},
+  "bad_frames": "auto",
+  "lexicon": {"Koffset": "K offset"},
+  "lines": {
+    "intro": {"caption": "This short walkthrough documents configuring a test cell and then reading the statistics chart."},
+    "ui1": {"caption": "First we open the cell settings panel and check the network type field here."},
+    "ui2": {"caption": "Next the band field sets which frequency range the simulated cell will use today."},
+    "ch1": {"caption": "The statistics view then shows how the two measured values change over the test run.",
+            "say": "The statistics view then shows how the two measured values change over the test run."},
+    "ch2": {"caption": "Dots mark the key moments where the value peaks and then fades away again slowly."},
+    "outro": {"caption": "That covers the whole setup flow from configuration to results in under a minute."}
+  },
+  "shots": [
+    {"card": "intro", "title": ["Cell Configuration", "Setup and Statistics"], "subtitle": "Fixture walkthrough",
+     "lines": ["intro"], "chapter": "INTRO"},
+    {"src": [[0.5, 9.5]], "hold": 9.5, "lines": ["ui1", ["ui2", 7.0]], "chapter": "01 · CONFIG", "xfade": 0.8,
+     "overlays": [
+       {"type": "box", "find": {"t": 2.0, "query": "NTN", "row": true}, "label": "Network type",
+        "from": "s:ui1+0.5", "to": "e:ui1"},
+       {"type": "box", "rect": [60, 178, 119, 194], "label": "Band", "label_side": "right",
+        "from": "s:ui2", "to": "end-0.5"}
+     ]},
+    {"src": [[10, 14, 2.0], [14, 19.5]], "hold": 19.5, "lines": ["ch1", "ch2"], "chapter": "02 · CHART", "xfade": 0.5,
+     "camera": [["s:ch1", "full"], ["s:ch2+0.5", [100, 120, 640, 360]], ["end-1", "full"]],
+     "overlays": [
+       {"type": "badge", "text": "2× speed", "from": 0.1, "to": 1.9},
+       {"type": "phases", "plot": [100, 120, 1180, 620],
+        "bands": [[100, 460, "RISING"], [460, 820, "PEAK"], [820, 1180, "FALLING", "#3B6EE6"]],
+        "from": "s:ch1+0.3", "to": "e:ch1"},
+       {"type": "dots", "points": [[[640, 200], "peak", "above"], [[1100, 560], "fade", "left"]],
+        "from": "s:ch2", "to": "e:ch2-0.2"}
+     ]},
+    {"card": "outro", "title": "Summary", "bullets": ["Cell configured", "Statistics reviewed"],
+     "lines": [["outro", 1.0]], "chapter": "SUMMARY", "xfade": 1.0, "tail": 2.0}
+  ]
+}

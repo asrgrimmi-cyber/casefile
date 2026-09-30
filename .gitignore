@@ -1,0 +1,25 @@
+# environments
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# models, recordings, outputs (never commit)
+models/
+recordings/
+out/
+reference/
+tests/fixtures/out/
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.wav
+
+# caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage

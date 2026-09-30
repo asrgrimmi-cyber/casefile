@@ -1,0 +1,21 @@
+# Technical decisions
+
+| # | Decision | Why |
+|---|---|---|
+| 1 | **One core, thin wrappers.** `api.py` has one function per tool. `mcp_server.py` and `cli.py` only parse arguments and print its JSON. | Every agent-visible behaviour can be reproduced from a shell, and there is one place to test. |
+| 2 | **Text-first tools with response budgets** (e.g. `find_text` ≤ 300 tokens, `plan` ≤ 800). Images only through `contact_sheet` and render thumbnails. | The assistant pays for every byte. OCR facts are cheaper and more exact than looking at frames. |
+| 3 | **Tesseract is auto-detected** at `C:\Program Files\Tesseract-OCR\tesseract.exe` (and `%LOCALAPPDATA%\Programs\Tesseract-OCR`) through `config.tool_path`. It does not need to be on PATH. | The common Windows installer doesn't add it to PATH, and users shouldn't have to edit their environment. |
+| 4 | **Kokoro fp32 is the default model.** int8 is optional and skipped by `doctor`. | Measured on an 8-core x86 laptop: fp32 1.09× realtime, int8 0.33×. int8 dequantisation is slower on x86 ONNX Runtime. |
+| 5 | **OCR uses `--psm 11`** (sparse text), a **2× upscale** plus threshold, and pads word boxes by **1 px** before mapping back to source px. | UI screenshots are sparse text in panels. psm 11 finds labels that psm 3/6 merge or drop. The upscale fixes small UI fonts, and the pad lands boxes within 1 px of the truth on the fixture. |
+| 6 | The `chart_extract` default `tol` is 40, but **50–60 is recommended for real recordings**. | H.264 4:2:0 chroma subsampling smears thin coloured curves. 40 is exact on the fixture but loses points on real footage. |
+| 7 | **Relative paths resolve against `CASEFILE_WORKDIR`, else the CWD**, not the spec file's directory. | There is one predictable rule for MCP and the CLI, and the workdir doubles as the sandbox root. |
+| 8 | **Bad-frame kinds are `black`, `glitch` and `popup`.** A bad frame is replaced by the nearest *earlier* good frame. | These are the common failure modes in screen recordings. Repeating the previous frame is invisible at 30 fps. |
+| 9 | **Captions show from −0.15 s before to +0.5 s after their line.** | Text appears just before the voice starts and stays long enough to read. |
+| 10 | **The test fixture is 1280x720**, 20 s at 30 fps (600 frames), with known ground truth (labels, rows, chart, black/popup frames). | Big enough for realistic OCR, small enough for fast tests. The known truth lets the gates be exact. |
+| 11 | **The planner rejects off-frame boxes** (error). Camera rects that are partly outside only warn. | An off-frame rect almost always means the wrong coordinate system (output px or `[x,y,w,h]`). Failing loudly saves a render. |
+| 12 | **Rendering is parallel** through a `spawn` `ProcessPoolExecutor` over frame segments. Each worker gets the pickled Plan, and if unpickling fails it re-plans from the spec (with cached TTS). Segments are joined with the ffmpeg concat demuxer. | `spawn` is the only start method that works on Windows. Pickling the Plan avoids repeating OCR/TTS. |
+| 13 | **Frame reuse.** Each output frame is reduced to a comparable key (source-frame digest + camera + recorded overlay ops). Identical consecutive frames reuse the previous image. | Holds, freeze frames and settled overlays are common in walkthroughs. Reusing them is a large speed-up with identical pixels. |
+| 14 | **The frame store is `~/.casefile/cache/frames/<key>/`** (`CASEFILE_HOME`). The key is a hash of path + size + mtime. It also holds `probe.json` and OCR caches. | The whole video is never held in RAM. Repeated probes and OCR are free, and the cache invalidates itself when the file changes. |
+| 15 | Output is **1920x1080 @ 30 fps**, **H.264 CRF 18 yuv420p**, **AAC 160k**, **loudnorm I=−16 TP=−1.5**, faststart. The caption bar is 111 px at 1080p. | Plays everywhere (including Confluence/Jira previews), and the loudness is consistent across videos. |
+| 16 | **Neutral default brand** (accent `#4F46E5`, ink `#111827`, Poppins). With no `brand.logo`, cards draw a small text wordmark. A user logo is scaled and never cropped. | Users document their own products, so the brand must be theirs and set per spec. |
+| 17 | **No automatic badges or titles.** They only appear when the spec asks for them. | Auto-inserted chips ("Paused for explanation") read as noise in documentation. |

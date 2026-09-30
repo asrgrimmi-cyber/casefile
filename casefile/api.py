@@ -153,6 +153,29 @@ def thumbs_tile(thumbs: list[str], max_width: int = 960) -> str | None:
     return str(out)
 
 
+# ------------------------------------------------------------------ v2 (job-based; implementation in api_v2.py)
+def _v2(name: str) -> Callable[..., Any]:
+    def call(*a: Any, **kw: Any) -> Any:
+        from . import api_v2
+        return getattr(api_v2, name)(*a, **kw)
+    call.__name__ = name
+    return _safe(call)  # type: ignore[arg-type]
+
+
+analyze_recording = _v2("analyze_recording")
+query_timeline = _v2("query_timeline")
+locate = _v2("locate")
+make_video = _v2("make_video")
+make_doc = _v2("make_doc")
+wait_job = _v2("wait_job")
+patch = _v2("patch")
+verify = _v2("verify")
+worker_status = _v2("worker_status")
+get_lessons = _v2("get_lessons")
+log_change = _v2("log_change")
+report_gap = _v2("report_gap")
+
+
 def doctor(download: bool = True) -> dict:
     """Environment check (never raises)."""
     try:

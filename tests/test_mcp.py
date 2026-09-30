@@ -50,7 +50,7 @@ def test_tool_list_and_description_budget():
         async with Client(server) as c:
             return (await c.list_tools()).tools
     tools = _run(go())
-    assert {t.name for t in tools} == TOOLS
+    assert TOOLS <= {t.name for t in tools}   # legacy 9 stay registered next to the v2 tools (test_mcp_v2.py)
     total = sum(len(t.description or "") + len(json.dumps(t.input_schema, separators=(",", ":"))) for t in tools)
     d = json.loads(SIZES.read_text()) if SIZES.exists() else {}
     d["_descriptions_and_schemas"] = total

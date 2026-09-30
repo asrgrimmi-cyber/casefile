@@ -3,7 +3,8 @@
 Pipeline
   1. plan = planner.plan(spec, synth=True)   (or a ready Plan)
   2. frames 0..ceil(total*fps)-1 are split into `jobs` contiguous chunks; each chunk is rendered by a
-     spawn-safe worker process (`_render_segment`) that pipes rgb24 frames into ffmpeg libx264 CRF 18.
+     spawn-safe worker process (`_render_segment`) that pipes rgb24 frames into ffmpeg: libx264 CRF 18, or
+     h264_nvenc (VBR CQ 19) when `encoder="auto"` finds a working NVENC (see casefile.gpu.nvenc_available).
      Workers get a picklable payload: the pickled Plan when it pickles, otherwise the spec JSON which the
      worker re-plans (TTS/OCR caches make that cheap and deterministic).
   3. concat demuxer (-c copy) -> video.mp4
@@ -52,6 +53,8 @@ from .media import FrameStore, ffmpeg, run
 PREVIEW_SIZE = (960, 540)
 PREVIEW_FPS = 15
 MIN_CHUNK_FRAMES = 30
+ENCODERS = ("auto", "libx264", "h264_nvenc")
+NVENC_MAX_SESSIONS = int(os.environ.get("CASEFILE_NVENC_SESSIONS", "4"))  # consumer GeForce session cap
 
 
 # ------------------------------------------------------------------ geometry
@@ -346,10 +349,29 @@ def _plan_from_payload(kind: str, blob: bytes) -> Any:
     return p
 
 
-def _encode_cmd(W: int, H: int, fps: int, out: Path, preset: str, threads: int) -> list[str]:
+def resolve_encoder(encoder: str | None = "auto") -> str:
+    """'auto' -> 'h264_nvenc' when ffmpeg has a working NVENC, else 'libx264'. Explicit names pass through."""
+    enc = (encoder or "auto").lower()
+    if enc not in ENCODERS:
+        raise ToolError(f"unknown encoder {encoder!r}", f"use one of {', '.join(ENCODERS)}")
+    if enc == "auto":
+        from .gpu import nvenc_available
+        return "h264_nvenc" if nvenc_available() else "libx264"
+    return enc
+
+
+def _codec_args(encoder: str, preset: str, threads: int) -> list[str]:
+    if encoder == "h264_nvenc":
+        nv_preset = "p3" if preset == "veryfast" else "p5"
+        return ["-c:v", "h264_nvenc", "-preset", nv_preset, "-rc", "vbr", "-cq", "19", "-b:v", "0", "-pix_fmt", "yuv420p"]
+    return ["-c:v", "libx264", "-preset", preset, "-crf", str(config.CRF), "-pix_fmt", "yuv420p",
+            "-threads", str(threads)]
+
+
+def _encode_cmd(W: int, H: int, fps: int, out: Path, preset: str, threads: int, encoder: str = "libx264") -> list[str]:
     return [ffmpeg(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps),
-            "-i", "-", "-an", "-c:v", "libx264", "-preset", preset, "-crf", str(config.CRF), "-pix_fmt", "yuv420p",
-            "-threads", str(threads), "-r", str(fps), "-video_track_timescale", str(fps * 1000), str(out)]
+            "-i", "-", "-an", *_codec_args(encoder, preset, threads),
+            "-r", str(fps), "-video_track_timescale", str(fps * 1000), str(out)]
 
 
 def _pipe_frames(stdin: Any, plan: Any, W: int, H: int, fps: int, n0: int, n1: int) -> None:
@@ -360,13 +382,14 @@ def _pipe_frames(stdin: Any, plan: Any, W: int, H: int, fps: int, n0: int, n1: i
 
 def _render_segment(args: tuple) -> dict:
     """Worker: render frames [n0, n1) to an H.264 segment. Spawn-safe (module-level, picklable args)."""
-    kind, blob, W, H, fps, n0, n1, out, preset, threads = args
+    kind, blob, W, H, fps, n0, n1, out, preset, threads, *rest = args
+    encoder = rest[0] if rest else "libx264"
     t0 = time.perf_counter()
     plan = _plan_from_payload(kind, blob)
     out = Path(out)
     errf = out.with_suffix(".log")
     with open(errf, "wb") as ef:
-        p = subprocess.Popen(_encode_cmd(W, H, fps, out, preset, threads), stdin=subprocess.PIPE, stderr=ef)
+        p = subprocess.Popen(_encode_cmd(W, H, fps, out, preset, threads, encoder), stdin=subprocess.PIPE, stderr=ef)
         try:
             assert p.stdin is not None
             _pipe_frames(p.stdin, plan, W, H, fps, n0, n1)
@@ -377,7 +400,7 @@ def _render_segment(args: tuple) -> dict:
             rc = p.wait()
     if rc != 0 or not out.exists():
         msg = errf.read_text(errors="replace")[-600:] if errf.exists() else ""
-        raise ToolError(f"ffmpeg encode failed for frames {n0}-{n1}: {msg.strip()}", "check ffmpeg (libx264)")
+        raise ToolError(f"ffmpeg encode failed for frames {n0}-{n1}: {msg.strip()}", f"check ffmpeg ({encoder})")
     return {"path": str(out), "frames": n1 - n0, "sec": time.perf_counter() - t0}
 
 
@@ -471,10 +494,12 @@ def _out_path(plan: Any, out: str | Path | None, preview: bool) -> Path:
     return path
 
 
-def render(spec_or_plan: Any, *, preview: bool = False, out: str | Path | None = None, jobs: int | None = None) -> dict:
+def render(spec_or_plan: Any, *, preview: bool = False, out: str | Path | None = None, jobs: int | None = None,
+           encoder: str = "auto") -> dict:
     """Render a spec (dict / JSON path / JSON text) or a planner.Plan to MP4.
 
-    Returns {path, duration, frames, size_mb, srt, thumbs:[4 png], render_sec, fps_render, size:[W,H], fps}."""
+    encoder: "auto" (h264_nvenc when ffmpeg has a working NVENC, else libx264), "libx264" or "h264_nvenc".
+    Returns {path, duration, frames, size_mb, srt, thumbs:[4 png], render_sec, fps_render, size:[W,H], fps, encoder}."""
     t_start = time.perf_counter()
     plan = _resolve_plan(spec_or_plan)
     if not getattr(plan, "shots", None):
@@ -486,7 +511,10 @@ def render(spec_or_plan: Any, *, preview: bool = False, out: str | Path | None =
     path = _out_path(plan, out, preview)
     rt = _rt(plan)  # extracts the source frames once, in the parent, before workers start
     del rt
+    enc = resolve_encoder(encoder)
     jobs = max(1, int(jobs or os.cpu_count() or 1))
+    if enc == "h264_nvenc":
+        jobs = min(jobs, max(1, NVENC_MAX_SESSIONS))
     chunks = _chunks(N, jobs)
     preset = "veryfast" if preview else "medium"
     threads = max(1, (os.cpu_count() or 1) // len(chunks))
@@ -495,10 +523,10 @@ def render(spec_or_plan: Any, *, preview: bool = False, out: str | Path | None =
         segs = [tmp / f"seg{i:03d}.mp4" for i in range(len(chunks))]
         if len(chunks) == 1:
             n0, n1 = chunks[0]
-            _render_segment_local(plan, W, H, fps, n0, n1, segs[0], preset, threads)
+            _render_segment_local(plan, W, H, fps, n0, n1, segs[0], preset, threads, enc)
         else:
             kind, blob = _payload(plan)
-            args = [(kind, blob, W, H, fps, a, b, str(s), preset, threads) for (a, b), s in zip(chunks, segs)]
+            args = [(kind, blob, W, H, fps, a, b, str(s), preset, threads, enc) for (a, b), s in zip(chunks, segs)]
             with ProcessPoolExecutor(max_workers=len(chunks), mp_context=get_context("spawn")) as ex:
                 list(ex.map(_render_segment, args))
         lst = tmp / "concat.txt"
@@ -524,15 +552,15 @@ def render(spec_or_plan: Any, *, preview: bool = False, out: str | Path | None =
     return {"path": str(path), "duration": round(duration, 2), "frames": N,
             "size_mb": round(path.stat().st_size / 1e6, 2), "srt": str(srt_path) if srt_path else None,
             "thumbs": thumbs, "render_sec": round(sec, 2), "fps_render": round(N / sec, 1) if sec > 0 else None,
-            "size": [W, H], "fps": fps, "warnings": list(getattr(plan, "warnings", []) or [])[:10]}
+            "size": [W, H], "fps": fps, "encoder": enc, "warnings": list(getattr(plan, "warnings", []) or [])[:10]}
 
 
 def _render_segment_local(plan: Any, W: int, H: int, fps: int, n0: int, n1: int, out: Path, preset: str,
-                          threads: int) -> None:
+                          threads: int, encoder: str = "libx264") -> None:
     """In-process variant of _render_segment (jobs=1 / tiny renders): no pickling needed."""
     errf = out.with_suffix(".log")
     with open(errf, "wb") as ef:
-        p = subprocess.Popen(_encode_cmd(W, H, fps, out, preset, threads), stdin=subprocess.PIPE, stderr=ef)
+        p = subprocess.Popen(_encode_cmd(W, H, fps, out, preset, threads, encoder), stdin=subprocess.PIPE, stderr=ef)
         try:
             assert p.stdin is not None
             _pipe_frames(p.stdin, plan, W, H, fps, n0, n1)
@@ -543,4 +571,4 @@ def _render_segment_local(plan: Any, W: int, H: int, fps: int, n0: int, n1: int,
             rc = p.wait()
     if rc != 0 or not out.exists():
         msg = errf.read_text(errors="replace")[-600:] if errf.exists() else ""
-        raise ToolError(f"ffmpeg encode failed: {msg.strip()}", "check ffmpeg (libx264)")
+        raise ToolError(f"ffmpeg encode failed: {msg.strip()}", f"check ffmpeg ({encoder})")

@@ -1,0 +1,56 @@
+{
+  "version": "1",
+  "video": {"path": "sample.mp4", "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "duration": 60.0, "fps": 30, "size": [1280, 720]},
+  "steps": [
+    {
+      "id": "s1", "t0": 0.5, "t1": 29.9, "stable_t": 3.2, "kind": "gui",
+      "title": "Web GUI · enb · Stats",
+      "screenshot": "steps/s1.png",
+      "items": [
+        {"id": "s1.web_gui_enb_stats", "text": "Web GUI · enb · Stats", "box": [24, 14, 330, 42], "t": 3.2, "conf": 97, "role": "heading"},
+        {"id": "s1.cells", "text": "Cells", "box": [40, 80, 110, 108], "t": 3.2, "conf": 96, "role": "tab"},
+        {"id": "s1.ntn", "text": "NTN", "box": [150, 80, 205, 108], "t": 3.2, "conf": 95, "role": "tab"},
+        {"id": "s1.ues", "text": "UEs", "box": [245, 80, 300, 108], "t": 3.2, "conf": 95, "role": "tab"},
+        {"id": "s1.band", "text": "Band", "box": [60, 160, 130, 186], "t": 3.2, "conf": 94, "role": "label"},
+        {"id": "s1.n256", "text": "n256", "box": [300, 160, 370, 186], "t": 3.2, "conf": 93, "role": "value"},
+        {"id": "s1.dl_arfcn", "text": "DL ARFCN", "box": [60, 210, 190, 236], "t": 3.2, "conf": 94, "role": "label"},
+        {"id": "s1.437000", "text": "437000", "box": [300, 210, 400, 236], "t": 3.2, "conf": 93, "role": "value"},
+        {"id": "s1.ue_count", "text": "UEs: 1", "box": [60, 260, 160, 286], "t": 3.2, "conf": 92, "role": "field"},
+        {"id": "s1.rnti", "text": "RNTI: 0x461e", "box": [60, 310, 250, 336], "t": 3.2, "conf": 91, "role": "field"}
+      ],
+      "fields": {"Band": "n256", "DL ARFCN": "437000", "UEs": "1", "RNTI": "0x461e"},
+      "commands": [],
+      "transcript": "",
+      "scroll": [],
+      "private": [
+        {"box": [880, 660, 1250, 700], "reason": "email", "t0": 0.5, "t1": 29.9}
+      ]
+    },
+    {
+      "id": "s2", "t0": 30.0, "t1": 59.5, "stable_t": 44.0, "kind": "terminal",
+      "title": "Terminal · ws.js ue_get",
+      "screenshot": "steps/s2.png",
+      "items": [
+        {"id": "s2.prompt", "text": "user@callbox:~$ ./ws.js 127.0.0.1:9001 ue_get", "box": [20, 20, 760, 44], "t": 41.6, "conf": 90, "role": "text"},
+        {"id": "s2.message_ue_get", "text": "\"message\": \"ue_get\"", "box": [40, 60, 330, 84], "t": 42.0, "conf": 92, "role": "text"},
+        {"id": "s2.rnti", "text": "\"rnti\": \"0x461e\"", "box": [40, 100, 300, 124], "t": 42.0, "conf": 93, "role": "value"},
+        {"id": "s2.pusch_snr", "text": "\"pusch_snr\": 23.4", "box": [40, 140, 320, 164], "t": 42.0, "conf": 93, "role": "value"},
+        {"id": "s2.dl_bitrate", "text": "\"dl_bitrate\": 1520000", "box": [40, 180, 380, 204], "t": 42.0, "conf": 92, "role": "value"},
+        {"id": "s2.cqi", "text": "\"cqi\": 15", "box": [40, 220, 190, 244], "t": 42.0, "conf": 91, "role": "value"}
+      ],
+      "fields": {"rnti": "0x461e", "pusch_snr": "23.4", "dl_bitrate": "1520000", "cqi": "15"},
+      "commands": [
+        {"t": 41.6, "text": "./ws.js 127.0.0.1:9001 '{\"message\":\"ue_get\"}'"}
+      ],
+      "transcript": "user@callbox:~$ ./ws.js 127.0.0.1:9001 ue_get\n  \"message\": \"ue_get\"\n  \"rnti\": \"0x461e\"\n  \"pusch_snr\": 23.4\n  \"dl_bitrate\": 1520000\n  \"cqi\": 15\n}",
+      "scroll": [{"t": 50.0, "dy": -120}],
+      "private": [
+        {"box": [20, 20, 240, 44], "reason": "hostname", "t0": 30.0, "t1": 59.5}
+      ]
+    }
+  ],
+  "speech": [],
+  "ignored_regions": [],
+  "stats": {"frames_analysed": 12, "analyse_sec": 1.5, "backend": "local", "ocr": "tesseract"}
+}

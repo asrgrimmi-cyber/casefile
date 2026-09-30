@@ -84,10 +84,97 @@ def load_spec(spec: dict | str | Path | Spec) -> Spec:
             raise ToolError(f"spec is not valid JSON: line {e.lineno}: {e.msg}", "fix the JSON syntax")
     if not isinstance(data, dict):
         raise ToolError("spec must be a JSON object", 'e.g. {"source": "demo.mp4", "shots": [...]}')
+    if has_item_refs(data):
+        data = _resolve_items_from_source(data)
     try:
         return Spec.model_validate(data)
     except ValidationError as e:
         raise _validation_error(e) from None
+
+
+# --------------------------------------------------------------------------- timeline item refs (v2)
+
+def has_item_refs(data: Any) -> bool:
+    """True when any box/blur overlay uses {"item": "<step>.<slug>"} instead of rect/find."""
+    if not isinstance(data, dict):
+        return False
+    for shot in data.get("shots") or []:
+        for ov in (shot.get("overlays") or []) if isinstance(shot, dict) else []:
+            if isinstance(ov, dict) and ov.get("item"):
+                return True
+    return False
+
+
+def _tl_items(tl: dict) -> dict[str, tuple[dict, dict]]:
+    return {it["id"]: (it, st) for st in tl.get("steps") or [] for it in st.get("items") or [] if it.get("id")}
+
+
+def _local_span(src: list, a: float, b: float) -> tuple[float, float] | None:
+    """Local shot seconds [first, last] where the played source time lies inside [a, b] (None: never)."""
+    t_local, first, last = 0.0, None, None
+    for seg in src:
+        s0, s1 = float(seg[0]), float(seg[1])
+        sp = float(seg[2]) if len(seg) == 3 else 1.0
+        lo, hi = max(s0, a), min(s1, b)
+        if hi > lo:
+            f, e = t_local + (lo - s0) / sp, t_local + (hi - s0) / sp
+            first = f if first is None else first
+            last = e
+        t_local += (s1 - s0) / sp
+    return None if first is None else (round(first, 2), round(last, 2))
+
+
+def resolve_item_refs(spec: dict, tl: dict, expects: dict | None = None) -> dict:
+    """Replace box/blur ``item`` refs by the item's rect (source px) from a timeline dict.
+
+    Default from/to (when the overlay gives none) = the local window where the shot plays the item's step
+    [t0, t1]; when the shot never shows that step the defaults stay (0 .. end). ``expects`` (optional dict)
+    receives {(shot_i, overlay_j): item text} for verification. Returns a new dict; unknown ids -> ToolError.
+    """
+    import copy
+    out = copy.deepcopy(spec)
+    items = _tl_items(tl or {})
+    for i, shot in enumerate(out.get("shots") or []):
+        if not isinstance(shot, dict):
+            continue
+        for j, ov in enumerate(shot.get("overlays") or []):
+            if not (isinstance(ov, dict) and ov.get("item")):
+                continue
+            ref = str(ov.pop("item"))
+            where = f"shots[{i}].overlays[{j}]"
+            if ov.get("type") not in ("box", "blur"):
+                raise ToolError(f"{where}: item refs only work on box/blur overlays", "remove item or use type box")
+            hit = items.get(ref)
+            if hit is None:
+                near = [k for k in items if k.split(".", 1)[-1] in ref or ref.split(".", 1)[-1] in k][:5]
+                raise ToolError(f"{where}: unknown timeline item {ref!r}",
+                                "use ids from query_timeline/locate" + (f", e.g. {', '.join(near)}" if near else ""))
+            it, st = hit
+            if ov.get("rect") is None and ov.get("find") is None:
+                ov["rect"] = [float(v) for v in it["box"]]
+            if expects is not None:
+                expects[(i, j)] = it.get("text", "")
+            if "from" not in ov and "to" not in ov and shot.get("src"):
+                span = _local_span(shot["src"], float(st.get("t0", 0)), float(st.get("t1", 1e9)))
+                if span and span[1] > span[0]:
+                    ov["from"], ov["to"] = span[0], span[1]
+    return out
+
+
+def _resolve_items_from_source(data: dict) -> dict:
+    tlmod = _optional("timeline")
+    if tlmod is None or not hasattr(tlmod, "load"):
+        raise ToolError("overlay item refs need casefile.timeline (not installed yet)",
+                        "use rect/find instead, or update casefile")
+    if not data.get("source"):
+        raise ToolError("item refs need spec.source", "set spec.source to the analysed recording")
+    try:
+        tl = tlmod.load(str(check_path(data["source"])))
+    except ToolError:
+        raise
+    except Exception as e:
+        raise ToolError(f"no timeline for {data['source']}: {str(e)[:120]}", "run analyze_recording first") from None
+    return resolve_item_refs(data, tl)
 
 
 # --------------------------------------------------------------------------- data classes

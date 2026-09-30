@@ -113,7 +113,7 @@ def h_doc(args: dict, ctx: JobContext) -> dict:
         raise ToolError("docs module not installed", "update casefile on the worker (casefile/docs.py)")
     tl = _require(args, "timeline")
     if isinstance(tl, str) and SHA_RE.match(tl.lower()):  # sha of the analysed VIDEO -> its timeline on this host
-        cand = ctx.home / "timelines" / tl.lower() / "timeline.json"
+        cand = ctx.home / "timelines" / tl.lower()[:16] / "timeline.json"  # timeline._dir uses sha[:16]
         if not cand.exists():
             raise ToolError(f"no timeline for video {tl}", "run an analyze job for that video first")
         tl = str(cand)

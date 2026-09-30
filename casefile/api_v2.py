@@ -57,7 +57,7 @@ def _box(b: Any) -> str:
 
 def _local_tl_path(video: Path) -> Path:
     from . import config
-    return config.home_dir() / "timelines" / C.file_sha256(video) / "timeline.json"
+    return config.home_dir() / "timelines" / C.file_sha256(video)[:16] / "timeline.json"  # same key as timeline._dir
 
 
 def load_tl(video: str | Path) -> tuple[dict, Path | None]:
